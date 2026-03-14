@@ -13,6 +13,8 @@ const coverStyles = [
 let currentLetter = null;
 let selectedCover = 0;
 let isAnimating = false;
+let editingLetterId = null;
+let modalCallback = null;
 
 // ===== 初始化 =====
 document.addEventListener('DOMContentLoaded', () => {
@@ -152,7 +154,7 @@ function renderLetters(yearGroups) {
     html += '</div>';
   });
   
-  html += '<div style="height: 80px;"></div>';
+  html += '<div style="height: 100px;"></div>';
   container.innerHTML = html;
 }
 
@@ -169,19 +171,11 @@ function escapeHtml(text) {
 
 // ===== 写信页 =====
 function initWritePage() {
-  // 重置表单
-  document.getElementById('letter-title').value = '';
-  document.getElementById('letter-content').value = '';
-  document.getElementById('content-count').textContent = '0 / 5000';
+  // 如果不是编辑模式，重置表单
+  if (!editingLetterId) {
+    resetWriteForm();
+  }
   
-  // 设置默认日期
-  const today = new Date();
-  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  document.getElementById('letter-date').value = dateStr;
-  document.getElementById('preview-date').textContent = formatDate(dateStr);
-  
-  // 重置封面选择
-  selectedCover = 0;
   renderCoverSelector();
   updatePreview();
   
@@ -194,6 +188,25 @@ function initWritePage() {
   
   // 绑定发送按钮
   document.getElementById('send-btn').onclick = saveLetter;
+}
+
+function resetWriteForm() {
+  editingLetterId = null;
+  document.getElementById('write-tip').textContent = '写下你的心意，传递给重要的人';
+  document.getElementById('send-btn-text').textContent = '寄出这封信';
+  
+  document.getElementById('letter-title').value = '';
+  document.getElementById('letter-content').value = '';
+  document.getElementById('content-count').textContent = '0 / 5000';
+  
+  // 设置默认日期
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  document.getElementById('letter-date').value = dateStr;
+  document.getElementById('preview-date').textContent = formatDate(dateStr);
+  
+  // 重置封面选择
+  selectedCover = 0;
 }
 
 function renderCoverSelector() {
@@ -220,7 +233,7 @@ function updatePreview() {
   const date = document.getElementById('letter-date').value;
   const style = coverStyles[selectedCover];
   
-  document.getElementById('preview-title').textContent = title;
+  document.getElementById('preview-title-text').textContent = title;
   document.getElementById('preview-date').textContent = date ? formatDate(date) : '';
   document.getElementById('preview-stamp').textContent = style.icon;
   document.getElementById('preview-pattern').textContent = style.pattern.replace(/  /g, '');
@@ -242,39 +255,57 @@ function saveLetter() {
     showToast('请写点什么吧...', '⚠️');
     return;
   }
-  if (!date) {
-    showToast('请选择写信日期', '⚠️');
-    return;
-  }
   
   // 显示发送中状态
   const sendBtn = document.getElementById('send-btn');
   sendBtn.classList.add('sending');
   sendBtn.querySelector('.send-icon').textContent = '✈️';
-  sendBtn.querySelector('.send-text').textContent = '寄出中...';
+  sendBtn.querySelector('.send-text').textContent = editingLetterId ? '保存中...' : '寄出中...';
   
   setTimeout(() => {
     const letters = getLetters();
-    const newLetter = {
-      id: Date.now().toString(),
-      title,
-      date,
-      content,
-      preview: content.substring(0, 60) + (content.length > 60 ? '...' : ''),
-      coverStyle: selectedCover,
-      opened: false,
-      createdAt: new Date().toISOString()
-    };
     
-    letters.push(newLetter);
-    saveLetters(letters);
+    if (editingLetterId) {
+      // 编辑模式：更新现有信件
+      const letterIndex = letters.findIndex(l => l.id === editingLetterId);
+      if (letterIndex !== -1) {
+        letters[letterIndex] = {
+          ...letters[letterIndex],
+          title,
+          date,
+          content,
+          preview: content.substring(0, 60) + (content.length > 60 ? '...' : ''),
+          coverStyle: selectedCover,
+        };
+        saveLetters(letters);
+        showToast('信件已保存 💌', '✓');
+      }
+    } else {
+      // 新建模式：添加新信件
+      const newLetter = {
+        id: Date.now().toString(),
+        title,
+        date,
+        content,
+        preview: content.substring(0, 60) + (content.length > 60 ? '...' : ''),
+        coverStyle: selectedCover,
+        opened: false,
+        createdAt: new Date().toISOString()
+      };
+      
+      letters.push(newLetter);
+      saveLetters(letters);
+      showToast('信寄出去了 💌', '✓');
+    }
     
-    showToast('信寄出去了 💌', '✓');
-    
+    // 重置表单
     setTimeout(() => {
       sendBtn.classList.remove('sending');
       sendBtn.querySelector('.send-icon').textContent = '💌';
       sendBtn.querySelector('.send-text').textContent = '寄出这封信';
+      
+      editingLetterId = null;
+      resetWriteForm();
       showPage('home');
     }, 1200);
   }, 600);
@@ -344,6 +375,9 @@ function startOpenAnimation() {
   // 第一步：封口翻开
   document.getElementById('env-flap').classList.add('flap-opened');
   document.getElementById('env-seal').classList.add('seal-break');
+  
+  // 生成爱心撒花效果
+  generateHeartBurst();
   generateConfetti();
   
   // 第二步：信纸滑出
@@ -357,34 +391,95 @@ function startOpenAnimation() {
     document.getElementById('letter-content-page').classList.add('show');
   }, 1200);
   
-  // 第四步：撒花彩纸
+  // 第四步：持续撒花
   setTimeout(() => {
-    const confettiLayer = document.getElementById('confetti-layer');
-    confettiLayer.style.display = 'block';
-    setTimeout(() => {
-      confettiLayer.style.display = 'none';
-    }, 3000);
+    generateMoreConfetti();
   }, 1400);
 }
 
+function generateHeartBurst() {
+  // 从信封中心爆发爱心
+  const envelope3d = document.getElementById('envelope-3d');
+  const rect = envelope3d.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  
+  const hearts = ['❤', '♡', '💕', '💖', '💗', '💓', '💝'];
+  const colors = ['#ff6b9d', '#ff8fb0', '#ffb6c1', '#ff1493', '#ff69b4', '#ffc0cb'];
+  
+  for (let i = 0; i < 30; i++) {
+    const heart = document.createElement('div');
+    heart.className = 'heart-burst';
+    heart.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+    heart.style.left = centerX + 'px';
+    heart.style.top = centerY + 'px';
+    heart.style.color = colors[Math.floor(Math.random() * colors.length)];
+    heart.style.fontSize = (Math.random() * 20 + 20) + 'px';
+    
+    // 随机方向
+    const angle = (Math.PI * 2 * i) / 30;
+    const distance = Math.random() * 150 + 100;
+    const tx = Math.cos(angle) * distance;
+    const ty = Math.sin(angle) * distance - 100;
+    
+    heart.style.setProperty('--tx', tx + 'px');
+    heart.style.setProperty('--ty', ty + 'px');
+    heart.style.animationDelay = (Math.random() * 0.3) + 's';
+    
+    document.body.appendChild(heart);
+    
+    // 动画结束后移除
+    setTimeout(() => {
+      heart.remove();
+    }, 1800);
+  }
+}
+
 function generateConfetti() {
-  const colors = ['#ff85a1', '#ffb6c1', '#ff5c8a', '#ffc0cb', '#ff1493', '#ffaec0', '#ffd6e8'];
-  const shapes = ['❤', '♡', '✿', '❀', '✦', '⭐', '🌸', '💕'];
+  const colors = ['#ff6b9d', '#ff8fb0', '#ffb6c1', '#ff1493', '#ffc0cb', '#ffd6e8', '#ffaec0'];
+  const shapes = ['❤', '♡', '✿', '❀', '✦', '⭐', '🌸', '💕', '💖', '🌺'];
   const container = document.getElementById('confetti-layer');
   
   let html = '';
-  for (let i = 0; i < 20; i++) {
-    const left = Math.random() * 90 + 5;
+  for (let i = 0; i < 25; i++) {
+    const left = Math.random() * 100;
     const color = colors[Math.floor(Math.random() * colors.length)];
     const shape = shapes[Math.floor(Math.random() * shapes.length)];
-    const size = Math.random() * 10 + 16;
-    const delay = Math.random() * 0.8;
-    const duration = Math.random() * 1.5 + 1.5;
+    const size = Math.random() * 15 + 20;
+    const delay = Math.random() * 0.5;
+    const duration = Math.random() * 2 + 2;
     
     html += `<div class="confetti-item" style="left:${left}%; color:${color}; font-size:${size}px; animation-delay:${delay}s; animation-duration:${duration}s;">${shape}</div>`;
   }
   
   container.innerHTML = html;
+}
+
+function generateMoreConfetti() {
+  const colors = ['#ff6b9d', '#ff8fb0', '#ffb6c1', '#ff1493', '#ffc0cb', '#ffd6e8'];
+  const shapes = ['❤', '♡', '💕', '💖', '✿', '🌸'];
+  
+  // 持续生成更多彩纸
+  for (let batch = 0; batch < 3; batch++) {
+    setTimeout(() => {
+      const container = document.getElementById('confetti-layer');
+      for (let i = 0; i < 10; i++) {
+        const item = document.createElement('div');
+        item.className = 'confetti-item';
+        item.textContent = shapes[Math.floor(Math.random() * shapes.length)];
+        item.style.left = (Math.random() * 100) + '%';
+        item.style.color = colors[Math.floor(Math.random() * colors.length)];
+        item.style.fontSize = (Math.random() * 12 + 16) + 'px';
+        item.style.animationDelay = '0s';
+        item.style.animationDuration = (Math.random() * 2 + 2) + 's';
+        container.appendChild(item);
+        
+        setTimeout(() => {
+          item.remove();
+        }, 4000);
+      }
+    }, batch * 500);
+  }
 }
 
 function replayAnimation() {
@@ -395,6 +490,76 @@ function replayAnimation() {
     document.getElementById('tap-hint').textContent = '点击打开信封';
     document.getElementById('envelope-scene').onclick = startOpenAnimation;
   }, 300);
+}
+
+// ===== 编辑功能 =====
+function editCurrentLetter() {
+  if (!currentLetter || currentLetter.id.startsWith('shared_')) {
+    showToast('分享的信件不能编辑', '⚠️');
+    return;
+  }
+  
+  // 设置编辑模式
+  editingLetterId = currentLetter.id;
+  
+  // 填充表单
+  document.getElementById('letter-title').value = currentLetter.title;
+  document.getElementById('letter-date').value = currentLetter.date;
+  document.getElementById('letter-content').value = currentLetter.content;
+  document.getElementById('content-count').textContent = `${currentLetter.content.length} / 5000`;
+  
+  // 设置封面
+  selectedCover = currentLetter.coverStyle || 0;
+  
+  // 更新提示文字
+  document.getElementById('write-tip').textContent = '编辑你的心意';
+  document.getElementById('send-btn-text').textContent = '保存修改';
+  
+  // 切换到写信页
+  showPage('write');
+}
+
+// ===== 删除功能 =====
+function deleteCurrentLetter() {
+  if (!currentLetter || currentLetter.id.startsWith('shared_')) {
+    showToast('分享的信件不能删除', '⚠️');
+    return;
+  }
+  
+  showModal('删除信件', '确定要删除这封信吗？此操作不可恢复。', () => {
+    const letters = getLetters();
+    const index = letters.findIndex(l => l.id === currentLetter.id);
+    if (index !== -1) {
+      letters.splice(index, 1);
+      saveLetters(letters);
+      showToast('信件已删除', '🗑️');
+      showPage('home');
+    }
+  }, true);
+}
+
+// ===== 模态框 =====
+function showModal(title, text, callback, isDelete = false) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-text').textContent = text;
+  
+  const confirmBtn = document.getElementById('modal-confirm-btn');
+  confirmBtn.className = isDelete ? 'modal-btn delete' : 'modal-btn confirm';
+  
+  modalCallback = callback;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+  modalCallback = null;
+}
+
+function confirmModal() {
+  if (modalCallback) {
+    modalCallback();
+  }
+  closeModal();
 }
 
 // ===== 分享功能 =====
