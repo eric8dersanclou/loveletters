@@ -578,6 +578,9 @@ function copyShareLink() {
   const encodedData = btoa(encodeURIComponent(JSON.stringify(letterData)));
   const shareUrl = `${window.location.origin}${window.location.pathname}?letter=${encodedData}`;
   
+  // 更新分享预览的 meta 标签
+  updateShareMeta(currentLetter);
+  
   if (navigator.clipboard) {
     navigator.clipboard.writeText(shareUrl).then(() => {
       showToast('链接已复制，快去分享吧！', '🔗');
@@ -597,6 +600,31 @@ function fallbackCopy(text) {
   document.execCommand('copy');
   document.body.removeChild(input);
   showToast('链接已复制，快去分享吧！', '🔗');
+}
+
+// 更新分享预览的 meta 标签
+function updateShareMeta(letter) {
+  const style = coverStyles[letter.coverStyle] || coverStyles[0];
+  const icon = style.icon;
+  const title = `${icon} 写给你的信：${letter.title}`;
+  const description = `有人给你写了一封信："${letter.preview}" 💌 点击打开查看`;
+  
+  // 更新标题
+  document.title = title;
+  
+  // 更新 Open Graph
+  document.querySelector('meta[property="og:title"]').setAttribute('content', title);
+  document.querySelector('meta[property="og:description"]').setAttribute('content', description);
+  document.querySelector('meta[property="og:url"]').setAttribute('content', window.location.href);
+  
+  // 更新 Twitter Card
+  document.querySelector('meta[name="twitter:title"]').setAttribute('content', title);
+  document.querySelector('meta[name="twitter:description"]').setAttribute('content', description);
+  document.querySelector('meta[name="twitter:url"]').setAttribute('content', window.location.href);
+  
+  // 更新 QQ 分享
+  document.querySelector('meta[itemprop="name"]').setAttribute('content', title);
+  document.querySelector('meta[itemprop="description"]').setAttribute('content', description);
 }
 
 function checkSharedLetter() {
@@ -631,6 +659,9 @@ function checkSharedLetter() {
 // 打开分享的信件（不依赖localStorage）
 function openSharedLetter(letter) {
   currentLetter = letter;
+  
+  // 更新分享预览的 meta 标签
+  updateShareMeta(letter);
   
   // 重置动画状态
   resetAnimation();
